@@ -987,79 +987,87 @@ private fun CameraContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Card(
-                    modifier = Modifier.size(64.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.DarkGray.copy(alpha = 0.5f)
-                    ),
-                    onClick = {
-                        val uri = lastPhotoUri
-                        if (uri != null) {
-                            viewerBitmap?.recycle()
-                            viewerBitmap = null
-                            viewerScale = 1f
-                            viewerOffset = Offset.Zero
-                            // IO 线程解码大图（无 inSampleSize，完整分辨率）
-                            scope.launch(Dispatchers.IO) {
-                                val fullBmp = runCatching {
-                                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                                        BitmapFactory.decodeStream(stream)
-                                    }
-                                }.getOrNull()
-                                if (fullBmp == null) {
-                                    mainHandler.post {
-                                        Toast.makeText(context, "无法加载原图", Toast.LENGTH_SHORT).show()
-                                    }
-                                } else {
-                                    mainHandler.post {
-                                        viewerBitmap = fullBmp
-                                        showViewer = true
+                if (!scanMode) {
+                    Card(
+                        modifier = Modifier.size(64.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.DarkGray.copy(alpha = 0.5f)
+                        ),
+                        onClick = {
+                            val uri = lastPhotoUri
+                            if (uri != null) {
+                                viewerBitmap?.recycle()
+                                viewerBitmap = null
+                                viewerScale = 1f
+                                viewerOffset = Offset.Zero
+                                // IO 线程解码大图（无 inSampleSize，完整分辨率）
+                                scope.launch(Dispatchers.IO) {
+                                    val fullBmp = runCatching {
+                                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                                            BitmapFactory.decodeStream(stream)
+                                        }
+                                    }.getOrNull()
+                                    if (fullBmp == null) {
+                                        mainHandler.post {
+                                            Toast.makeText(context, "无法加载原图", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        mainHandler.post {
+                                            viewerBitmap = fullBmp
+                                            showViewer = true
+                                        }
                                     }
                                 }
+                            } else {
+                                Toast.makeText(context, "还没有拍摄照片", Toast.LENGTH_SHORT).show()
                             }
-                        } else {
-                            Toast.makeText(context, "还没有拍摄照片", Toast.LENGTH_SHORT).show()
                         }
-                    }
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
                     ) {
-                        val bmp = lastPhotoBitmap
-                        if (bmp != null) {
-                            androidx.compose.foundation.Image(
-                                bitmap = bmp.asImageBitmap(),
-                                contentDescription = "最近照片",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_photo),
-                                contentDescription = "相册",
-                                modifier = Modifier.size(32.dp),
-                                tint = Color.Gray
-                            )
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val bmp = lastPhotoBitmap
+                            if (bmp != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = bmp.asImageBitmap(),
+                                    contentDescription = "最近照片",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_photo),
+                                    contentDescription = "相册",
+                                    modifier = Modifier.size(32.dp),
+                                    tint = Color.Gray
+                                )
+                            }
                         }
                     }
+                } else {
+                    Spacer(modifier = Modifier.size(64.dp))
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(84.dp)
-                        .clip(CircleShape)
-                        .border(4.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-                        .padding(6.dp)
-                        .clickable { takePhoto() }
-                ) {
+                if (!scanMode) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .size(84.dp)
                             .clip(CircleShape)
-                            .background(Color.White)
-                    )
+                            .border(4.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                            .padding(6.dp)
+                            .clickable { takePhoto() }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                                .background(Color.White)
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.size(84.dp))
                 }
 
                 if (scanMode) {
