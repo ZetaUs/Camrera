@@ -436,7 +436,7 @@ private fun CameraContent(
 
             val capture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setJpegQuality(100)
+                .setJpegQuality(95)
                 .build()
             imageCapture = capture
 
