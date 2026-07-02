@@ -230,7 +230,9 @@ private fun PermissionRequestScreen(
     }
 }
 
-@SuppressLint("AutoboxingStateCreation")
+@SuppressLint("AutoboxingStateCreation", "UnsafeOptInUsageError", "ClickableViewAccessibility",
+    "DefaultLocale", "UseKtx"
+)
 @Composable
 private fun CameraContent(
     context: Context,
