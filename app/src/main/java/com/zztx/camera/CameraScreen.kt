@@ -1156,5 +1156,58 @@ private fun CameraContent(
                 }
             )
         }
+
+        if (showOpenBrowserConfirm && scanDialogText != null) {
+            val text = scanDialogText!!
+            AlertDialog(
+                onDismissRequest = {
+                    showOpenBrowserConfirm = false
+                },
+                title = { Text(text = "打开浏览器") },
+                text = {
+                    Column {
+                        Text(
+                            text = "是否要在浏览器中打开以下链接？",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            runCatching {
+                                val intent = android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    Uri.parse(text)
+                                ).apply {
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            }
+                            showOpenBrowserConfirm = false
+                            showScanDialog = false
+                            lastScanRaw = null
+                        }
+                    ) {
+                        Text("打开")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showOpenBrowserConfirm = false
+                        }
+                    ) {
+                        Text("取消")
+                    }
+                }
+            )
+        }
     }
 }
