@@ -293,6 +293,7 @@ private fun CameraContent(
     var lastScanRaw by remember { mutableStateOf<String?>(null) }
     var showScanDialog by remember { mutableStateOf(false) }
     var scanDialogText by remember { mutableStateOf<String?>(null) }
+    var showOpenBrowserConfirm by remember { mutableStateOf(false) }
 
     val vibrateOnce: () -> Unit = remember {
         {
@@ -1137,17 +1138,7 @@ private fun CameraContent(
                         if (isUrl) {
                             TextButton(
                                 onClick = {
-                                    runCatching {
-                                        val intent = android.content.Intent(
-                                            android.content.Intent.ACTION_VIEW,
-                                            Uri.parse(text)
-                                        ).apply {
-                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        }
-                                        context.startActivity(intent)
-                                    }
-                                    showScanDialog = false
-                                    lastScanRaw = null
+                                    showOpenBrowserConfirm = true
                                 }
                             ) {
                                 Text("打开链接")
