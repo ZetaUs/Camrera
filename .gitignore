@@ -1,0 +1,14 @@
+/build
+/.gradle
+/captures
+/outputs
+.idea
+*.iml
+local.properties
+gradle-wrapper.jar
+.DS_Store
+*.log
+build/
+app/build/
+*.jks
+*.keystore
