@@ -47,6 +47,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -346,6 +348,53 @@ private fun CameraContent(
         BarcodeScanning.getClient(options)
     }
 
+    fun handleScanSuccess(raw: String) {
+        if (raw == lastScanRaw) return
+        lastScanRaw = raw
+        vibrateOnce()
+        scanDialogText = raw
+        showScanDialog = true
+    }
+
+    fun scanLocalImage(uri: Uri) {
+        scope.launch(Dispatchers.IO) {
+            val bmp = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            }.getOrNull()
+            if (bmp == null) {
+                mainHandler.post {
+                    Toast.makeText(context, "无法读取图片", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            val inputImage = InputImage.fromBitmap(bmp, 0)
+            barcodeScanner.process(inputImage)
+                .addOnSuccessListener { barcodes ->
+                    val first = barcodes.firstOrNull()?.rawValue
+                    if (!first.isNullOrEmpty()) {
+                        mainHandler.post { handleScanSuccess(first) }
+                    } else {
+                        mainHandler.post {
+                            Toast.makeText(context, "未识别到条码", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                .addOnFailureListener {
+                    mainHandler.post {
+                        Toast.makeText(context, "识别失败", Toast.LENGTH_SHORT).show()
+                    }
+                }
+        }
+    }
+
+    val pickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) scanLocalImage(uri)
+    }
+
     DisposableEffect(Unit) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_DESTROY) {
@@ -410,11 +459,8 @@ private fun CameraContent(
                                 if (barcodes.isNotEmpty()) {
                                     val first = barcodes.firstOrNull()
                                     val raw = first?.rawValue
-                                    if (!raw.isNullOrEmpty() && raw != lastScanRaw) {
-                                        lastScanRaw = raw
-                                        vibrateOnce()
-                                        scanDialogText = raw
-                                        showScanDialog = true
+                                    if (!raw.isNullOrEmpty()) {
+                                        handleScanSuccess(raw)
                                     }
                                 }
                             }
@@ -990,7 +1036,46 @@ private fun CameraContent(
                     )
                 }
 
-                Box(modifier = Modifier.size(64.dp))
+                if (scanMode) {
+                    Card(
+                        modifier = Modifier.size(64.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.DarkGray.copy(alpha = 0.5f)
+                        ),
+                        onClick = {
+                            runCatching { pickImageLauncher.launch("image/*") }
+                                .onFailure {
+                                    Toast.makeText(context, "无法打开相册", Toast.LENGTH_SHORT).show()
+                                }
+                        }
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_photo),
+                                    contentDescription = "选图扫码",
+                                    modifier = Modifier.size(28.dp),
+                                    tint = Color.White
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "选图",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Box(modifier = Modifier.size(64.dp))
+                }
             }
         }
 
