@@ -588,65 +588,109 @@ private fun CameraContent(
                 object : ImageCapture.OnImageCapturedCallback() {
                     @SuppressLint("UseKtx")
                     override fun onCaptureSuccess(imageProxy: ImageProxy) {
+                        val jpegBytes: ByteArray
+                        val rotationDegrees: Int
                         runCatching {
-                            val bitmap = imageProxyToBitmap(imageProxy)
-                            imageProxy.close()
-                            if (bitmap == null) {
-                                mainHandler.post {
-                                    captureAnim = false
-                                    runCatching { context.contentResolver.delete(mediaUri, null, null) }
-                                    Toast.makeText(context, "图像解码失败", Toast.LENGTH_SHORT).show()
-                                }
-                                return@runCatching
-                            }
-                            runCatching {
-                                context.contentResolver.openOutputStream(mediaUri, "w").use { out ->
-                                    checkNotNull(out) { "无法打开输出流" }
-                                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                                }
-                            }.getOrElse { err ->
-                                mainHandler.post {
-                                    captureAnim = false
-                                    runCatching { context.contentResolver.delete(mediaUri, null, null) }
-                                    Toast.makeText(
-                                        context,
-                                        "保存 PNG 失败: ${err.message}",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                bitmap.recycle()
-                                return@runCatching
-                            }
-
-                            markMediaStoreReady(context, mediaUri)
-                            lastPhotoUri = mediaUri
-
-                            // 缩略图直接从已解码 bitmap 缩小生成，节省二次读取
-                            runCatching {
-                                val thumbW = (bitmap.width * 0.125f).toInt().coerceAtLeast(1)
-                                val thumbH = (bitmap.height * 0.125f).toInt().coerceAtLeast(1)
-                                val thumb = Bitmap.createScaledBitmap(bitmap, thumbW, thumbH, true)
-                                mainHandler.post { lastPhotoBitmap = thumb }
-                                if (thumb !== bitmap) bitmap.recycle()
-                            }.onFailure {
-                                mainHandler.post { lastPhotoBitmap = bitmap }
-                            }
-
-                            mainHandler.post {
-                                captureAnim = false
-                                Toast.makeText(context, "已保存 PNG: $fileName", Toast.LENGTH_SHORT).show()
-                            }
-                        }.onFailure { err ->
+                            val buffer = imageProxy.planes[0].buffer
+                            jpegBytes = ByteArray(buffer.remaining())
+                            buffer.get(jpegBytes)
+                            rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                        }.getOrElse {
                             runCatching { imageProxy.close() }
                             mainHandler.post {
                                 captureAnim = false
                                 runCatching { context.contentResolver.delete(mediaUri, null, null) }
+                                Toast.makeText(context, "读取帧失败", Toast.LENGTH_SHORT).show()
+                            }
+                            return
+                        }
+                        runCatching { imageProxy.close() }
+
+                        // 1. 立即给 UI 反馈：关掉闪屏，用户可以继续操作（PNG 后台保存）
+                        mainHandler.post {
+                            captureAnim = false
+                            Toast.makeText(context, "拍照成功，保存中…", Toast.LENGTH_SHORT).show()
+                        }
+
+                        // 2. 后台做 完整Bitmap decode(+rotate) + 缩略图 inSampleSize decode(+rotate)
+                        var fullBmp: Bitmap? = null
+                        var thumbBmp: Bitmap? = null
+                        runCatching {
+                            val fullOpts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+                            fullBmp = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, fullOpts)
+                            if (rotationDegrees != 0 && fullBmp != null) {
+                                val m = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+                                val rotated = Bitmap.createBitmap(fullBmp!!, 0, 0, fullBmp!!.width, fullBmp!!.height, m, true)
+                                if (rotated !== fullBmp) fullBmp!!.recycle()
+                                fullBmp = rotated
+                            }
+
+                            val thumbOpts = BitmapFactory.Options().apply {
+                                inSampleSize = 8
+                                inPreferredConfig = Bitmap.Config.RGB_565
+                            }
+                            thumbBmp = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, thumbOpts)
+                            if (rotationDegrees != 0 && thumbBmp != null) {
+                                val m = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+                                val rotated = Bitmap.createBitmap(thumbBmp!!, 0, 0, thumbBmp!!.width, thumbBmp!!.height, m, true)
+                                if (rotated !== thumbBmp) thumbBmp!!.recycle()
+                                thumbBmp = rotated
+                            }
+                        }.getOrElse {
+                            mainHandler.post {
+                                runCatching { context.contentResolver.delete(mediaUri, null, null) }
+                                Toast.makeText(context, "图像解码失败", Toast.LENGTH_SHORT).show()
+                            }
+                            fullBmp?.recycle()
+                            thumbBmp?.recycle()
+                            return
+                        }
+
+                        val bitmap = fullBmp
+                        if (bitmap == null) {
+                            mainHandler.post {
+                                runCatching { context.contentResolver.delete(mediaUri, null, null) }
+                                Toast.makeText(context, "图像解码失败", Toast.LENGTH_SHORT).show()
+                            }
+                            thumbBmp?.recycle()
+                            return
+                        }
+
+                        // 3. PNG 存盘
+                        runCatching {
+                            context.contentResolver.openOutputStream(mediaUri, "w").use { out ->
+                                checkNotNull(out) { "无法打开输出流" }
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 0, out)
+                            }
+                        }.getOrElse { err ->
+                            mainHandler.post {
+                                runCatching { context.contentResolver.delete(mediaUri, null, null) }
                                 Toast.makeText(
                                     context,
-                                    "拍照失败: ${err.message}",
+                                    "保存 PNG 失败: ${err.message}",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
+                            bitmap.recycle()
+                            thumbBmp?.recycle()
+                            return
+                        }
+
+                        markMediaStoreReady(context, mediaUri)
+
+                        // 4. 更新缩略图/路径 + 最终完成提示
+                        mainHandler.post {
+                            lastPhotoUri = mediaUri
+                            val thumb = thumbBmp
+                            if (thumb != null) {
+                                val prev = lastPhotoBitmap
+                                lastPhotoBitmap = thumb
+                                prev?.recycle()
+                            } else {
+                                lastPhotoBitmap = bitmap
+                            }
+                            if (thumb !== bitmap) bitmap.recycle()
+                            Toast.makeText(context, "已保存 PNG: $fileName", Toast.LENGTH_SHORT).show()
                         }
                     }
 
