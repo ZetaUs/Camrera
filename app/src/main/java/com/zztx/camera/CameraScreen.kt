@@ -436,7 +436,7 @@ private fun CameraContent(
 
             val capture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setJpegQuality(95)
+                .setJpegQuality(100)
                 .build()
             imageCapture = capture
 
@@ -574,7 +574,7 @@ private fun CameraContent(
             Toast.makeText(context, "相机尚未就绪", Toast.LENGTH_SHORT).show()
             return
         }
-        val fileName = "ZTG_${DateFormat.format("yyyyMMdd_HHmmss", Date())}.png"
+        val fileName = "IMG_${DateFormat.format("yyyyMMdd_HHmmss", Date())}.png"
         val mediaUri = createPhotoMediaStoreUri(context, fileName) ?: run {
             Toast.makeText(context, "无法创建保存路径 (已尝试 Photo/Pictures/Photo/DCIM/Photo/DCIM)", Toast.LENGTH_LONG).show()
             return
@@ -634,7 +634,7 @@ private fun CameraContent(
 
                             mainHandler.post {
                                 captureAnim = false
-                                Toast.makeText(context, "已保存: ZTG PNG -> $fileName", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "已保存 PNG: $fileName", Toast.LENGTH_SHORT).show()
                             }
                         }.onFailure { err ->
                             runCatching { imageProxy.close() }
