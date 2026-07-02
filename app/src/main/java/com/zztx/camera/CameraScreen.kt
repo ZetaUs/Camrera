@@ -105,6 +105,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 import java.util.Date
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -143,27 +144,6 @@ private fun createPhotoMediaStoreUri(context: Context, fileName: String): Uri? {
     tryInsert("${Environment.DIRECTORY_DCIM}/Photo")?.let { return it }
     // 4. Fallback: DCIM (必定存在)
     return tryInsert(Environment.DIRECTORY_DCIM)
-}
-
-@SuppressLint("UnsafeOptInUsageError")
-private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
-    return runCatching {
-        val buffer = imageProxy.planes[0].buffer
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, null)
-        bitmap?.let {
-            val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-            if (rotationDegrees != 0) {
-                val matrix = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-                val rotated = Bitmap.createBitmap(it, 0, 0, it.width, it.height, matrix, true)
-                if (rotated !== it) it.recycle()
-                return rotated
-            }
-            return it
-        }
-        null
-    }.getOrNull()
 }
 
 private fun markMediaStoreReady(context: Context, uri: Uri) {
@@ -440,7 +420,7 @@ private fun CameraContent(
                 .build()
             imageCapture = capture
 
-            val useCases = mutableListOf<androidx.camera.core.UseCase>(preview, capture)
+            val useCases = mutableListOf(preview, capture)
 
             val analysis = if (scanMode) {
                 val a = ImageAnalysis.Builder()
@@ -547,7 +527,7 @@ private fun CameraContent(
                     focusPoint = (e.x to e.y)
                     showFocusRing = true
                     scope.launch {
-                        delay(1200)
+                        delay(1200.milliseconds)
                         showFocusRing = false
                     }
                     return true
@@ -588,13 +568,11 @@ private fun CameraContent(
                 object : ImageCapture.OnImageCapturedCallback() {
                     @SuppressLint("UseKtx")
                     override fun onCaptureSuccess(imageProxy: ImageProxy) {
-                        val jpegBytes: ByteArray
-                        val rotationDegrees: Int
-                        runCatching {
+                        val (jpegBytes, rotationDegrees) = runCatching {
                             val buffer = imageProxy.planes[0].buffer
-                            jpegBytes = ByteArray(buffer.remaining())
-                            buffer.get(jpegBytes)
-                            rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                            val bytes = ByteArray(buffer.remaining())
+                            buffer.get(bytes)
+                            bytes to imageProxy.imageInfo.rotationDegrees
                         }.getOrElse {
                             runCatching { imageProxy.close() }
                             mainHandler.post {
@@ -618,10 +596,11 @@ private fun CameraContent(
                         runCatching {
                             val fullOpts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
                             fullBmp = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, fullOpts)
-                            if (rotationDegrees != 0 && fullBmp != null) {
+                            val fb = fullBmp
+                            if (rotationDegrees != 0 && fb != null) {
                                 val m = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-                                val rotated = Bitmap.createBitmap(fullBmp!!, 0, 0, fullBmp!!.width, fullBmp!!.height, m, true)
-                                if (rotated !== fullBmp) fullBmp!!.recycle()
+                                val rotated = Bitmap.createBitmap(fb, 0, 0, fb.width, fb.height, m, true)
+                                if (rotated !== fb) fb.recycle()
                                 fullBmp = rotated
                             }
 
@@ -630,10 +609,11 @@ private fun CameraContent(
                                 inPreferredConfig = Bitmap.Config.RGB_565
                             }
                             thumbBmp = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, thumbOpts)
-                            if (rotationDegrees != 0 && thumbBmp != null) {
+                            val tb = thumbBmp
+                            if (rotationDegrees != 0 && tb != null) {
                                 val m = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-                                val rotated = Bitmap.createBitmap(thumbBmp!!, 0, 0, thumbBmp!!.width, thumbBmp!!.height, m, true)
-                                if (rotated !== thumbBmp) thumbBmp!!.recycle()
+                                val rotated = Bitmap.createBitmap(tb, 0, 0, tb.width, tb.height, m, true)
+                                if (rotated !== tb) tb.recycle()
                                 thumbBmp = rotated
                             }
                         }.getOrElse {
@@ -1200,7 +1180,7 @@ private fun CameraContent(
                                             viewerOffset = Offset.Zero
                                         } else {
                                             viewerScale = newScale
-                                            viewerOffset = viewerOffset + pan
+                                            viewerOffset += pan
                                         }
                                     }
                                 )
